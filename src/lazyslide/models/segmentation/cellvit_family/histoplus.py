@@ -346,7 +346,7 @@ class HistoPLUSModel(nn.Module):
         out_dict["hv"] = self.hv_branch(z[-1], n)
         out_dict["tp"] = self.tp_branch(z[-1], n)
 
-        return out_dict
+        return out_dict, z[-4:]
 
 
 @register(
@@ -405,7 +405,7 @@ class HistoPLUS(SegmentationModel):
 
     def segment(self, image):
         with torch.inference_mode():
-            output = self.model(image)
+            output, z = self.model(image)
         # return output
         # postprocess the output
         flattened = [
@@ -420,17 +420,18 @@ class HistoPLUS(SegmentationModel):
                 batch["hv"].detach().cpu().numpy(),
                 variant=self.variant,
             )  # Numpy array
-            prob_map = batch["tp"].softmax(0).detach().cpu().numpy()  # Skip background
+            prob_map = batch["tp"].softmax(0).detach().cpu().numpy()  # Skip background            
             instances_maps.append(instance_map)
             prob_maps.append(prob_map)
 
         return {
+            "embedding": np.array(z),
             "instance_map": np.array(instances_maps),
             "class_map": np.array(prob_maps),
         }
 
     def supported_output(self):
-        return ["instance_map", "class_map"]
+        return ["embedding", "instance_map", "class_map"]
 
     @staticmethod
     def get_classes():
@@ -470,6 +471,30 @@ class HistoPLUS(SegmentationModel):
             )
         return True
 
+
+
+# def get_cell_token(
+#     cell_bbox: list[int], tokens: torch.tensor, idx: int, patch_size: int = 1024
+# ) -> torch.tensor:
+#     """Get the cell token from the patch token"""
+#     # Cell location in patch, extend minimum to left + maximum
+#     bb_index = cell_bbox / patch_size
+#     bb_index[0, :] = np.floor(bb_index[0, :])
+#     bb_index[1, :] = np.ceil(bb_index[1, :])
+#     bb_index = bb_index.astype(np.uint8)
+
+#     # Get cell embedding for token
+#     cell_token = tokens[
+#         idx,
+#         :,
+#         bb_index[0, 0] : bb_index[1, 0],
+#         bb_index[0, 1] : bb_index[1, 1],
+#     ]
+
+#     # Average over all pixels contained in the cell
+#     cell_token = torch.mean(rearrange(cell_token, "D H W -> (H W) D"), dim=0)
+
+#     return cell_token.cpu().detach().squeeze().numpy()
 
 def remap_state_dict(state_dict):
     new_state_dict = {}
