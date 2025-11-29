@@ -491,30 +491,6 @@ class HistoPLUS(SegmentationModel):
         return True
 
 
-# def get_cell_token(
-#     cell_bbox: list[int], tokens: torch.tensor, idx: int, patch_size: int = 1024
-# ) -> torch.tensor:
-#     """Get the cell token from the patch token"""
-#     # Cell location in patch, extend minimum to left + maximum
-#     bb_index = cell_bbox / patch_size
-#     bb_index[0, :] = np.floor(bb_index[0, :])
-#     bb_index[1, :] = np.ceil(bb_index[1, :])
-#     bb_index = bb_index.astype(np.uint8)
-
-#     # Get cell embedding for token
-#     cell_token = tokens[
-#         idx,
-#         :,
-#         bb_index[0, 0] : bb_index[1, 0],
-#         bb_index[0, 1] : bb_index[1, 1],
-#     ]
-
-#     # Average over all pixels contained in the cell
-#     cell_token = torch.mean(rearrange(cell_token, "D H W -> (H W) D"), dim=0)
-
-#     return cell_token.cpu().detach().squeeze().numpy()
-
-
 def remap_state_dict(state_dict):
     new_state_dict = {}
 
