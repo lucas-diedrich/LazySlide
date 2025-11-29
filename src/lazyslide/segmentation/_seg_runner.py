@@ -558,6 +558,7 @@ class CellSegmentationRunner(Runner):
 
                     instance_map = output["instance_map"]
                     class_map = output.get("class_map", None)
+                    embeddings_map = output.get("embeddings_map", None)
 
                     # Get output and covert to numpy
                     if isinstance(instance_map, torch.Tensor):
@@ -565,6 +566,9 @@ class CellSegmentationRunner(Runner):
                     if class_map is not None:
                         if isinstance(class_map, torch.Tensor):
                             class_map = class_map.detach().cpu().numpy()
+                    if embeddings_map is not None:
+                        if isinstance(embeddings_map, torch.Tensor):
+                            embeddings_map = embeddings_map.detach().cpu().numpy()
                     for i in range(len(xs)):
                         pos_x = xs[i]
                         pos_y = ys[i]
@@ -573,12 +577,16 @@ class CellSegmentationRunner(Runner):
                             prob_map = class_map[i]
                         else:
                             prob_map = None
+                        embed_map = (
+                            embeddings_map[i] if embeddings_map is not None else None
+                        )
 
                         # Convert the output to polygons
                         m = InstanceMap(
                             out,
                             prob_map=prob_map,
                             class_names=self.class_names,
+                            embeddings_map=embed_map,
                         )
                         df = m.to_polygons(detect_holes=False)
                         if len(df) > 0:
