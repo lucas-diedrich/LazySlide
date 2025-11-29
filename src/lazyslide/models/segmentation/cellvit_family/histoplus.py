@@ -358,7 +358,7 @@ class HistoPLUSModel(nn.Module):
         out_dict["tp"] = self.tp_branch(z[-1], n)
         out_dict["embedding"] = self._get_embedding(feature_maps=feature_maps)
 
-        return out_dict, z
+        return out_dict
 
 
 @register(
@@ -417,7 +417,7 @@ class HistoPLUS(SegmentationModel):
 
     def segment(self, image):
         with torch.inference_mode():
-            output, z = self.model(image)
+            output = self.model(image)
         # return output
         # postprocess the output
         flattened = [
