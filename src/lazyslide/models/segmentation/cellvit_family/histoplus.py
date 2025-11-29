@@ -426,7 +426,7 @@ class HistoPLUS(SegmentationModel):
 
         instances_maps = []
         prob_maps = []
-        embeddings = []
+        embeddings = {}
         for batch in flattened:
             instance_map = np_hv_postprocess(
                 batch["np"].softmax(0).detach().cpu().numpy()[1],
@@ -435,16 +435,16 @@ class HistoPLUS(SegmentationModel):
             )  # Numpy array
             prob_map = batch["tp"].softmax(0).detach().cpu().numpy()  # Skip background
             cell_embeddings = process_embeddings_map(
-                instance_map=instance_map,
+                instance_map=instance_map.squeeze(),
                 embedding=batch["embedding"].detach().cpu().numpy(),
             )
 
             instances_maps.append(instance_map)
             prob_maps.append(prob_map)
-            embeddings.append(cell_embeddings)
+            embeddings.update(cell_embeddings)
 
         return {
-            "embedding": np.array(embeddings),
+            "embedding": embeddings,
             "instance_map": np.array(instances_maps),
             "class_map": np.array(prob_maps),
         }

@@ -223,9 +223,7 @@ def remove_small_objects(
     return out
 
 
-def process_embeddings_map(
-    instance_map: np.ndarray, embedding: np.ndarray, sampling_factor: int
-) -> dict:
+def process_embeddings_map(instance_map: np.ndarray, embedding: np.ndarray) -> dict:
     """Extract cell-specific embeddings
 
     Parameters
@@ -241,13 +239,15 @@ def process_embeddings_map(
         Mean embedding of all tokens that intersect with instance map, keyed by instance ID
     """
     # Upsample embeddings: (D, H, W) -> (D, H*factor, W*factor) using nearest neighbor
-    _, h, w = embedding.shape
+    h, w = instance_map.shape
+    d, _, _ = embedding.shape
 
-    embedding_upsampled = cv2.resize(
-        embedding.transpose(1, 2, 0),  # (H, W, D)
-        (w, h),
-        interpolation=cv2.INTER_NEAREST,
-    )
+    # Upsample each channel separately to handle large D
+    embedding_upsampled = np.zeros((h, w, d), dtype=embedding.dtype)
+    for i in range(d):
+        embedding_upsampled[:, :, i] = cv2.resize(
+            embedding[i], (w, h), interpolation=cv2.INTER_NEAREST
+        )
 
     instance_embeddings = {}
     for instance_id in np.unique(instance_map):
