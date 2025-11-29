@@ -22,7 +22,11 @@ from .blocks import (
     CellViTNeck,
     DecoderBranch,
 )
-from .postprocess import np_hv_postprocess, process_embeddings_map
+from .postprocess import (
+    np_hv_postprocess,
+    process_embeddings_map,
+    upsample_embeddings_map,
+)
 
 BIOPTIMUS_MEAN = (0.707223, 0.578729, 0.703617)
 BIOPTIMUS_STD = (0.211883, 0.230117, 0.177517)
@@ -426,7 +430,7 @@ class HistoPLUS(SegmentationModel):
 
         instances_maps = []
         prob_maps = []
-        embeddings = {}
+        embeddings = []
         for batch in flattened:
             instance_map = np_hv_postprocess(
                 batch["np"].softmax(0).detach().cpu().numpy()[1],
@@ -434,17 +438,17 @@ class HistoPLUS(SegmentationModel):
                 variant=self.variant,
             )  # Numpy array
             prob_map = batch["tp"].softmax(0).detach().cpu().numpy()  # Skip background
-            cell_embeddings = process_embeddings_map(
-                instance_map=instance_map.squeeze(),
+            cell_embedding = upsample_embeddings_map(
+                instance_map=instance_map,
                 embedding=batch["embedding"].detach().cpu().numpy(),
             )
 
             instances_maps.append(instance_map)
             prob_maps.append(prob_map)
-            embeddings.update(cell_embeddings)
+            embeddings.append(cell_embedding)
 
         return {
-            "embedding": embeddings,
+            "embeddings_map": embeddings,
             "instance_map": np.array(instances_maps),
             "class_map": np.array(prob_maps),
         }
