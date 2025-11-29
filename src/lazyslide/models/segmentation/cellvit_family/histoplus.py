@@ -22,7 +22,7 @@ from .blocks import (
     CellViTNeck,
     DecoderBranch,
 )
-from .postprocess import np_hv_postprocess
+from .postprocess import np_hv_postprocess, process_embeddings_map
 
 BIOPTIMUS_MEAN = (0.707223, 0.578729, 0.703617)
 BIOPTIMUS_STD = (0.211883, 0.230117, 0.177517)
@@ -321,7 +321,18 @@ class HistoPLUSModel(nn.Module):
         assert len(feature_maps) == 4
         z = [x, *list(feature_maps.values())]
         n = self.neck(z[:-1])
-        return z, n
+        return z, n, feature_maps
+
+    def _get_embedding(self, feature_maps: dict[str, torch.Tensor]) -> torch.Tensor:
+        """Extract last layer from HistoPlus as feature embeddings
+
+        Returns
+        -------
+        tensor
+            Tensor of shape Batch x Dimension x N Tokens x N Tokens
+        """
+        last_layer = self.backbone.output_layers[-1]
+        return feature_maps[last_layer]
 
     def forward(self, x: torch.Tensor) -> OrderedDict[str, torch.Tensor]:
         """Do forward pass for cell detection and classification.
@@ -339,14 +350,15 @@ class HistoPLUSModel(nn.Module):
             - "hv" : torch.Tensor : [B, 2, H, W]
             - "tp" : torch.Tensor : [B, number_cell_types, H, W]
         """
-        z, n = self._extract_features(x)
+        z, n, feature_maps = self._extract_features(x)
 
         out_dict = OrderedDict()
         out_dict["np"] = self.np_branch(z[-1], n)
         out_dict["hv"] = self.hv_branch(z[-1], n)
         out_dict["tp"] = self.tp_branch(z[-1], n)
+        out_dict["embedding"] = self._get_embedding(feature_maps=feature_maps)
 
-        return out_dict, z[-4:]
+        return out_dict, z
 
 
 @register(
@@ -414,18 +426,25 @@ class HistoPLUS(SegmentationModel):
 
         instances_maps = []
         prob_maps = []
+        embeddings = []
         for batch in flattened:
             instance_map = np_hv_postprocess(
                 batch["np"].softmax(0).detach().cpu().numpy()[1],
                 batch["hv"].detach().cpu().numpy(),
                 variant=self.variant,
             )  # Numpy array
-            prob_map = batch["tp"].softmax(0).detach().cpu().numpy()  # Skip background            
+            prob_map = batch["tp"].softmax(0).detach().cpu().numpy()  # Skip background
+            cell_embeddings = process_embeddings_map(
+                instance_map=instance_map,
+                embedding=batch["embedding"].detach().cpu().numpy(),
+            )
+
             instances_maps.append(instance_map)
             prob_maps.append(prob_map)
+            embeddings.append(cell_embeddings)
 
         return {
-            "embedding": np.array(z),
+            "embedding": np.array(embeddings),
             "instance_map": np.array(instances_maps),
             "class_map": np.array(prob_maps),
         }
@@ -472,7 +491,6 @@ class HistoPLUS(SegmentationModel):
         return True
 
 
-
 # def get_cell_token(
 #     cell_bbox: list[int], tokens: torch.tensor, idx: int, patch_size: int = 1024
 # ) -> torch.tensor:
@@ -495,6 +513,7 @@ class HistoPLUS(SegmentationModel):
 #     cell_token = torch.mean(rearrange(cell_token, "D H W -> (H W) D"), dim=0)
 
 #     return cell_token.cpu().detach().squeeze().numpy()
+
 
 def remap_state_dict(state_dict):
     new_state_dict = {}

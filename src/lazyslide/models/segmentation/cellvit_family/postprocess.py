@@ -221,3 +221,40 @@ def remove_small_objects(
     out[too_small_mask] = 0
 
     return out
+
+
+def process_embeddings_map(
+    instance_map: np.ndarray, embedding: np.ndarray, sampling_factor: int
+) -> dict:
+    """Extract cell-specific embeddings
+
+    Parameters
+    ----------
+    instance_map
+        Patch Size Y x Patch Size X labels. Labeling of cell instances in images
+    embedding
+        Dimension x N tokens Y x N tokens X
+
+    Returns
+    -------
+    dict
+        Mean embedding of all tokens that intersect with instance map, keyed by instance ID
+    """
+    # Upsample embeddings: (D, H, W) -> (D, H*factor, W*factor) using nearest neighbor
+    _, h, w = embedding.shape
+
+    embedding_upsampled = cv2.resize(
+        embedding.transpose(1, 2, 0),  # (H, W, D)
+        (w, h),
+        interpolation=cv2.INTER_NEAREST,
+    )
+
+    instance_embeddings = {}
+    for instance_id in np.unique(instance_map):
+        if instance_id == 0:  # Skip background
+            continue
+        mask = instance_map == instance_id
+        cell_values = embedding_upsampled[mask]  # Shape: (N_pixels, D)
+        instance_embeddings[instance_id] = np.mean(cell_values, axis=0)
+
+    return instance_embeddings
