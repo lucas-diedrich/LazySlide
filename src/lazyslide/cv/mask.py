@@ -725,23 +725,22 @@ def binary_mask_to_polygons_with_prob(
     # Create a list to store data for the GeoDataFrame
     data = []
 
-    # If a probability mask is provided, calculate the probability for each polygon
-    for idx, poly in enumerate(polys):
+    for poly in polys:
         polygon_representation = {"geometry": poly}
-        if prob_map is not None:
-            is_classification = prob_map.ndim == 3
-            # Create a mask for the current polygon
+
+        # Create polygon mask once if needed for prob_map or embeddings_map
+        poly_mask = None
+        if prob_map is not None or embeddings_map is not None:
             poly_mask = np.zeros_like(binary_mask, dtype=np.uint8)
-            # Convert polygon coordinates to integer points for cv2.fillPoly
             points = np.array(poly.exterior.coords, dtype=np.int32)
-            # cv2.fillPoly(poly_mask, [points], 1)
             cv2.drawContours(poly_mask, [points], -1, 1, thickness=cv2.FILLED)
-            # Fill the holes with 0 if detect_holes is True
             if detect_holes:
                 for hole in poly.interiors:
                     hole_points = np.array(hole.coords, dtype=np.int32)
                     cv2.fillPoly(poly_mask, [hole_points], 0)
 
+        if prob_map is not None:
+            is_classification = prob_map.ndim == 3
             # Calculate mean probability within the polygon
             if is_classification:
                 # If it's a classification map, calculate the mean probability for each class
@@ -765,25 +764,15 @@ def binary_mask_to_polygons_with_prob(
                 polygon_representation.update({"prob": prob})
 
         if embeddings_map is not None:
-            # Create a mask for the current polygon
-            poly_mask = np.zeros_like(binary_mask, dtype=np.uint8)
-            # Convert polygon coordinates to integer points for cv2.fillPoly
-            points = np.array(poly.exterior.coords, dtype=np.int32)
-            # cv2.fillPoly(poly_mask, [points], 1)
-            cv2.drawContours(poly_mask, [points], -1, 1, thickness=cv2.FILLED)
-            # Fill the holes with 0 if detect_holes is True
-            if detect_holes:
-                for hole in poly.interiors:
-                    hole_points = np.array(hole.coords, dtype=np.int32)
-                    cv2.fillPoly(poly_mask, [hole_points], 0)
-
-            # Embedding has dimension (Dimensions, Height, Width), subset to cell and mean-aggregate over height+width
+            # Embedding has shape (H, W, D), mask and mean-aggregate over H and W
             masked_embedding = embeddings_map * np.expand_dims(poly_mask, -1)
-            masked_embedding = np.mean(masked_embedding, axis=(1, 2))
-
-            # compute mean embedding over all pixels per instance
+            mean_embedding = (
+                np.sum(masked_embedding, axis=(0, 1)) / np.sum(poly_mask)
+                if np.sum(poly_mask) > 0
+                else np.zeros(embeddings_map.shape[-1])
+            )
             polygon_representation.update(
-                {f"dim_{idx}": dim for idx, dim in enumerate(masked_embedding)}
+                {f"dim_{dim_idx}": dim for dim_idx, dim in enumerate(mean_embedding)}
             )
 
         # Add polygon
