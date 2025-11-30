@@ -223,7 +223,9 @@ def remove_small_objects(
     return out
 
 
-def upsample_embeddings_map(instance_map: np.ndarray, embedding: np.ndarray) -> dict:
+def upsample_embeddings_map(
+    instance_map: np.ndarray, embedding: np.ndarray
+) -> np.ndarray:
     """Extract cell-specific embeddings
 
     Embeddings are computed on N x N pixel-sized tokens (Histoplus: N=14)
@@ -238,54 +240,18 @@ def upsample_embeddings_map(instance_map: np.ndarray, embedding: np.ndarray) -> 
 
     Returns
     -------
-    Embeddings upsampled to resolution of instance_map with nearest neighbor
-    interpolation
+    np.ndarray
+        Embeddings upsampled to resolution of instance_map (H, W, D) with nearest
+        neighbor interpolation
     """
-    # Upsample embeddings: (D, H, W) -> (D, H*factor, W*factor) using nearest neighbor
     h, w = instance_map.shape
-    d, _, _ = embedding.shape
+    _, h_emb, w_emb = embedding.shape
 
-    # Upsample each channel separately to handle large D
-    embedding_upsampled = np.zeros((h, w, d), dtype=embedding.dtype)
-    for i in range(d):
-        embedding_upsampled[:, :, i] = cv2.resize(
-            embedding[i], (w, h), interpolation=cv2.INTER_NEAREST
-        )
+    # Calculate zoom factors for spatial dimensions only (D stays the same)
+    zoom_factors = (1, h / h_emb, w / w_emb)
 
-    return embedding_upsampled
+    # Vectorized upsample using scipy.ndimage.zoom with nearest neighbor (order=0)
+    embedding_upsampled = ndimage.zoom(embedding, zoom_factors, order=0)
 
-
-def process_embeddings_map(instance_map: np.ndarray, embedding: np.ndarray) -> dict:
-    """Extract cell-specific embeddings
-
-    Parameters
-    ----------
-    instance_map
-        Patch Size Y x Patch Size X labels. Labeling of cell instances in images
-    embedding
-        Dimension x N tokens Y x N tokens X
-
-    Returns
-    -------
-    dict
-        Mean embedding of all tokens that intersect with instance map, keyed by instance ID
-    """
-    # Upsample embeddings: (D, H, W) -> (D, H*factor, W*factor) using nearest neighbor
-
-    h, w = instance_map.shape
-    d, h_emb, w_emb = embedding.shape
-
-    if h_emb != h or w_emb != w:
-        embedding = upsample_embeddings_map(
-            instance_map=instance_map, embedding=embedding
-        )
-
-    instance_embeddings = {}
-    for instance_id in np.unique(instance_map):
-        if instance_id == 0:  # Skip background
-            continue
-        mask = instance_map == instance_id
-        cell_values = embedding[mask]  # Shape: (N_pixels, D)
-        instance_embeddings[instance_id] = np.mean(cell_values, axis=0)
-
-    return instance_embeddings
+    # Transpose from (D, H, W) to (H, W, D)
+    return np.transpose(embedding_upsampled, (1, 2, 0))
