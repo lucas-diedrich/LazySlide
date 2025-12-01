@@ -24,7 +24,6 @@ from .blocks import (
 )
 from .postprocess import (
     np_hv_postprocess,
-    process_embeddings_map,
     upsample_embeddings_map,
 )
 
