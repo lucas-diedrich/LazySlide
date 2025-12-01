@@ -728,8 +728,9 @@ def binary_mask_to_polygons_with_prob(
     for poly in polys:
         polygon_representation = {"geometry": poly}
 
-        # Create polygon mask once if needed for prob_map or embeddings_map
-        poly_mask = None
+        # Create polygon mask and compute pixel indices once if needed
+        pixel_indices = None
+        n_pixels = 0
         if prob_map is not None or embeddings_map is not None:
             poly_mask = np.zeros_like(binary_mask, dtype=np.uint8)
             points = np.array(poly.exterior.coords, dtype=np.int32)
@@ -738,39 +739,41 @@ def binary_mask_to_polygons_with_prob(
                 for hole in poly.interiors:
                     hole_points = np.array(hole.coords, dtype=np.int32)
                     cv2.fillPoly(poly_mask, [hole_points], 0)
+            # Compute indices once for reuse - avoids creating large intermediate arrays
+            pixel_indices = np.nonzero(poly_mask)
+            n_pixels = pixel_indices[0].size
 
         if prob_map is not None:
             is_classification = prob_map.ndim == 3
-            # Calculate mean probability within the polygon
             if is_classification:
-                # If it's a classification map, calculate the mean probability for each class
-                # And then argmax to get the most probable class
-                masked_prob = prob_map * poly_mask
-                prob = (
-                    np.sum(masked_prob, axis=(1, 2)) / np.sum(poly_mask)
-                    if np.sum(poly_mask) > 0
-                    else 0
-                )
-                c = np.argmax(prob)
-                prob = prob[c]
+                # prob_map has shape (C, H, W) for classification
+                if n_pixels > 0:
+                    # Extract pixels for all classes: shape (C, N_pixels)
+                    class_probs = prob_map[:, pixel_indices[0], pixel_indices[1]]
+                    # Mean over pixels for each class: shape (C,)
+                    prob = np.mean(class_probs, axis=1)
+                    c = int(np.argmax(prob))
+                    prob = prob[c]
+                else:
+                    prob = 0
+                    c = 0
                 polygon_representation.update({"prob": prob, "class": c})
             else:
-                masked_prob = prob_map * poly_mask
-                prob = (
-                    np.sum(masked_prob) / np.sum(poly_mask)
-                    if np.sum(poly_mask) > 0
-                    else 0
-                )
+                # prob_map has shape (H, W)
+                if n_pixels > 0:
+                    prob = np.mean(prob_map[pixel_indices])
+                else:
+                    prob = 0
                 polygon_representation.update({"prob": prob})
 
         if embeddings_map is not None:
-            # Embedding has shape (H, W, D), mask and mean-aggregate over H and W
-            masked_embedding = embeddings_map * np.expand_dims(poly_mask, -1)
-            mean_embedding = (
-                np.sum(masked_embedding, axis=(0, 1)) / np.sum(poly_mask)
-                if np.sum(poly_mask) > 0
-                else np.zeros(embeddings_map.shape[-1])
-            )
+            # Embedding has shape (H, W, D), use selective indexing
+            if n_pixels > 0:
+                # Extract only polygon pixels: shape (N_pixels, D)
+                cell_embeddings = embeddings_map[pixel_indices]
+                mean_embedding = np.mean(cell_embeddings, axis=0)
+            else:
+                mean_embedding = np.zeros(embeddings_map.shape[-1])
             polygon_representation.update(
                 {f"dim_{dim_idx}": dim for dim_idx, dim in enumerate(mean_embedding)}
             )
