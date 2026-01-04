@@ -22,10 +22,7 @@ from .blocks import (
     CellViTNeck,
     DecoderBranch,
 )
-from .postprocess import (
-    np_hv_postprocess,
-    upsample_embeddings_map,
-)
+from .postprocess import np_hv_postprocess
 
 BIOPTIMUS_MEAN = (0.707223, 0.578729, 0.703617)
 BIOPTIMUS_STD = (0.211883, 0.230117, 0.177517)
