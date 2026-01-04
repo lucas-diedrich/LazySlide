@@ -221,37 +221,3 @@ def remove_small_objects(
     out[too_small_mask] = 0
 
     return out
-
-
-def upsample_embeddings_map(
-    instance_map: np.ndarray, embedding: np.ndarray
-) -> np.ndarray:
-    """Extract cell-specific embeddings
-
-    Embeddings are computed on N x N pixel-sized tokens (Histoplus: N=14)
-    Upsample to the same resolution as instance map for downstream processing
-
-    Parameters
-    ----------
-    instance_map
-        Patch Size Y x Patch Size X labels. Labeling of cell instances in images
-    embedding
-        Dimension x N tokens Y x N tokens X
-
-    Returns
-    -------
-    np.ndarray
-        Embeddings upsampled to resolution of instance_map (H, W, D) with nearest
-        neighbor interpolation
-    """
-    h, w = instance_map.shape
-    _, h_emb, w_emb = embedding.shape
-
-    # Calculate zoom factors for spatial dimensions only (D stays the same)
-    zoom_factors = (1, h / h_emb, w / w_emb)
-
-    # Vectorized upsample using scipy.ndimage.zoom with nearest neighbor (order=0)
-    embedding_upsampled = ndimage.zoom(embedding, zoom_factors, order=0)
-
-    # Transpose from (D, H, W) to (H, W, D)
-    return np.transpose(embedding_upsampled, (1, 2, 0))
