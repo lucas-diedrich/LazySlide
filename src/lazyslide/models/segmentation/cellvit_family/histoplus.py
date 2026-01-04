@@ -437,10 +437,9 @@ class HistoPLUS(SegmentationModel):
                 variant=self.variant,
             )  # Numpy array
             prob_map = batch["tp"].softmax(0).detach().cpu().numpy()  # Skip background
-            cell_embedding = upsample_embeddings_map(
-                instance_map=instance_map,
-                embedding=batch["embedding"].detach().cpu().numpy(),
-            )
+            cell_embedding = (
+                batch["embedding"].detach().cpu().numpy().transpose(1, 2, 0)
+            )  # (h, w, d)
 
             instances_maps.append(instance_map)
             prob_maps.append(prob_map)
