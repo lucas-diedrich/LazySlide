@@ -678,6 +678,58 @@ def binary_mask_to_polygons(
         return polys
 
 
+def mask_from_polygon(
+    poly: Polygon, shape: tuple[int], detect_holes: bool = True
+) -> np.ndarray:
+    # Create a mask for the current polygon
+    poly_mask = np.zeros(shape=shape, dtype=np.uint8)
+    # Convert polygon coordinates to integer points for cv2.fillPoly
+    points = np.array(poly.exterior.coords, dtype=np.int32)
+    # cv2.fillPoly(poly_mask, [points], 1)
+    cv2.drawContours(poly_mask, [points], -1, 1, thickness=cv2.FILLED)
+    # Fill the holes with 0 if detect_holes is True
+    if detect_holes:
+        for hole in poly.interiors:
+            hole_points = np.array(hole.coords, dtype=np.int32)
+            cv2.fillPoly(poly_mask, [hole_points], 0)
+
+    return poly_mask
+
+
+def weighted_mean_with_mask(embedding: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """
+    Parameters
+    ----------
+    embedding
+        (h, w, n_features) array.
+    mask
+        (H, W) Cell mask where H = h*block_size and W=w*block_size
+
+    Returns:
+        n_features array of weighted means
+    """
+    h, w, n_features = embedding.shape
+    H, W = mask.shape
+
+    # Granularity of downscaled embedding
+    block_size = int(H / h)
+
+    if not ((h * block_size == H) and (w * block_size == W)):
+        raise ValueError(
+            f"Expected embedding pixels to be of consistent granularity in H/W dimension, got (h,w) = {(h, w)}, (H, W) = {(H, W)}"
+        )
+
+    # weights: (h, w)
+    weights = mask.reshape(h, block_size, w, block_size).sum(axis=(1, 3))
+
+    numerator = (embedding * weights[:, :, None]).sum(axis=(0, 1))
+
+    # denominator: (n_classes, 1)
+    denominator = weights.sum(axis=(0, 1))
+
+    return np.divide(numerator, denominator, where=denominator != 0)
+
+
 def binary_mask_to_polygons_with_prob(
     binary_mask,
     prob_map=None,
@@ -696,7 +748,7 @@ def binary_mask_to_polygons_with_prob(
     prob_map : np.ndarray, optional
         Probability mask with the same shape as the binary mask.
     embeddings_map : np.ndarray, optional
-        Embeddings mask with the same shape as the binary mask.
+        Embeddings mask of shape (h, w, d) as the binary mask.
     min_area : float
         Minimum area of detected regions to be included in the polygon.
     min_hole_area : float
@@ -732,13 +784,10 @@ def binary_mask_to_polygons_with_prob(
         pixel_indices = None
         n_pixels = 0
         if prob_map is not None or embeddings_map is not None:
-            poly_mask = np.zeros_like(binary_mask, dtype=np.uint8)
-            points = np.array(poly.exterior.coords, dtype=np.int32)
-            cv2.drawContours(poly_mask, [points], -1, 1, thickness=cv2.FILLED)
-            if detect_holes:
-                for hole in poly.interiors:
-                    hole_points = np.array(hole.coords, dtype=np.int32)
-                    cv2.fillPoly(poly_mask, [hole_points], 0)
+            poly_mask = mask_from_polygon(
+                poly=poly, shape=binary_mask.shape, detect_holes=detect_holes
+            )
+
             # Compute indices once for reuse - avoids creating large intermediate arrays
             pixel_indices = np.nonzero(poly_mask)
             n_pixels = pixel_indices[0].size
@@ -767,11 +816,9 @@ def binary_mask_to_polygons_with_prob(
                 polygon_representation.update({"prob": prob})
 
         if embeddings_map is not None:
-            # Embedding has shape (H, W, D), use selective indexing
+            # Embedding has shape (H, W, D)
             if n_pixels > 0:
-                # Extract only polygon pixels: shape (N_pixels, D)
-                cell_embeddings = embeddings_map[pixel_indices]
-                mean_embedding = np.mean(cell_embeddings, axis=0)
+                mean_embedding = weighted_mean_with_mask(embeddings_map, mask=poly_mask)
             else:
                 mean_embedding = np.zeros(embeddings_map.shape[-1])
             polygon_representation.update(
